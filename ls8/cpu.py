@@ -18,33 +18,42 @@ class CPU:
     def ram_write(self, mar, mdr):
         self.ram[mar] = mdr
 
-    def load(self):
+    def load(self, file):
         """Load a program into memory."""
 
         address = 0
 
-        # For now, we've just hardcoded a program:
-
-        program = [
-            # From print8.ls8
-            0b10000010,  # LDI R0,8
-            0b00000000,
-            0b00001000,
-            0b01000111,  # PRN R0
-            0b00000000,
-            0b00000001,  # HLT
-        ]
-
-        for instruction in program:
-            self.ram_write(address, instruction)
-            address += 1
+        with open(file) as program:
+            for line in program:
+                binstr = ""
+                for char in line:
+                    if char == "\n" or char == "#":
+                        break
+                    elif char == "0" or char == "1":
+                        binstr += char
+                if len(binstr) == 8:
+                    self.ram_write(address, int(binstr, 2))
+                    address += 1
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
-        # elif op == "SUB": etc
+        elif op == "SUB":
+            self.reg[reg_a] -= self.reg[reg_b]
+        elif op == "MUL":
+            self.reg[reg_a] *= self.reg[reg_b]
+        elif op == "DIV":
+            if self.reg[reg_b] == 0:
+                raise Exception("Cannot divide by zero")
+            else:
+                self.reg[reg_a] //= self.reg[reg_b]
+        elif op == "MOD":
+            if self.reg[reg_b] == 0:
+                raise Exception("Cannot divide by zero")
+            else:
+                self.reg[reg_a] %= self.reg[reg_b]
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -70,14 +79,44 @@ class CPU:
 
     def run(self):
         """Run the CPU."""
-        ir = 0
-        while ir != 0x01:
+        while True:
+            # self.trace()
             ir = self.ram_read(self.pc)
-            
-            if ir == 0x82:
-                self.reg[self.ram_read(self.pc + 1)] = self.ram_read(self.pc + 2)
+
+            if ir == 0x01:  # HLT
+                exit()
+
+            if ir == 0x82:  # LDI
+                self.reg[self.ram_read(self.pc + 1)
+                         ] = self.ram_read(self.pc + 2)
                 self.pc += 1 + 2
-            elif ir == 0x47:
+
+            elif ir == 0x47:  # PRN
                 print(self.reg[self.ram_read(self.pc + 1)])
                 self.pc += 1 + 1
 
+            elif ir == 0xA0:
+                self.alu("ADD", self.ram_read(self.pc + 1),
+                         self.ram_read(self.pc+2))
+                self.pc += 1 + 2
+            elif ir == 0xA1:
+                self.alu("SUB", self.ram_read(self.pc + 1),
+                         self.ram_read(self.pc+2))
+                self.pc += 1 + 2
+            elif ir == 0xA2:
+                self.alu("MUL", self.ram_read(self.pc + 1),
+                         self.ram_read(self.pc+2))
+                self.pc += 1 + 2
+            elif ir == 0xA3:
+                self.alu("DIV", self.ram_read(self.pc + 1),
+                         self.ram_read(self.pc+2))
+                self.pc += 1 + 2
+            elif ir == 0xA4:
+                self.alu("MOD", self.ram_read(self.pc + 1),
+                         self.ram_read(self.pc+2))
+                self.pc += 1 + 2
+
+            else:
+                print("Error: Unknown Instruction %02X" % ir)
+                self.trace()
+                exit()
