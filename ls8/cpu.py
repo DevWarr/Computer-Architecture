@@ -11,6 +11,20 @@ class CPU:
         self.pc = 0
         self.ram = [0b0] * 0x100
         self.reg = [0] * 0x8
+        self.dispatch_table = {
+            0x01: self.HLT,
+            0x82: self.LDI,
+            0x47: self.PRN
+        }
+        self.ALU_table = {
+            0x00: lambda a, b: self.reg[a] + self.reg[b],
+            0x01: lambda a, b: self.reg[a] - self.reg[b],
+            0x02: lambda a, b: self.reg[a] * self.reg[b],
+            0x03: lambda a, b: self.reg[a] // self.reg[b],
+            0x04: lambda a, b: self.reg[a] % self.reg[b],
+            0x05: lambda a, b: (self.reg[a] + 0x01) & 0xFF,
+            0x06: lambda a, b: (self.reg[a] - 0x01) & 0xFF,
+        }
 
     def ram_read(self, mar):
         return self.ram[mar]
@@ -35,27 +49,27 @@ class CPU:
                     self.ram_write(address, int(binstr, 2))
                     address += 1
 
-    def alu(self, op, reg_a, reg_b):
+    def ALU(self, op, reg_a, reg_b):
         """ALU operations."""
 
-        if op == "ADD":
-            self.reg[reg_a] += self.reg[reg_b]
-        elif op == "SUB":
-            self.reg[reg_a] -= self.reg[reg_b]
-        elif op == "MUL":
-            self.reg[reg_a] *= self.reg[reg_b]
-        elif op == "DIV":
-            if self.reg[reg_b] == 0:
-                raise Exception("Cannot divide by zero")
-            else:
-                self.reg[reg_a] //= self.reg[reg_b]
-        elif op == "MOD":
-            if self.reg[reg_b] == 0:
-                raise Exception("Cannot divide by zero")
-            else:
-                self.reg[reg_a] %= self.reg[reg_b]
-        else:
+        arithmetic = self.ALU_table.get(op)
+        if arithmetic is None:
             raise Exception("Unsupported ALU operation")
+
+        if (op == 0x03 or op == 0x04) and self.reg[reg_b] == 0:
+            raise Exception("Cannot divide by zero")
+
+        self.reg[reg_a] = arithmetic(reg_a, reg_b)
+
+    def LDI(self, ir):
+        self.reg[self.ram_read(self.pc + 1)
+                 ] = self.ram_read(self.pc + 2)
+
+    def PRN(self, ir):
+        print(self.reg[self.ram_read(self.pc + 1)])
+
+    def HLT(self, ir):
+        exit()
 
     def trace(self):
         """
@@ -80,43 +94,26 @@ class CPU:
     def run(self):
         """Run the CPU."""
         while True:
-            # self.trace()
+            self.trace()
             ir = self.ram_read(self.pc)
 
-            if ir == 0x01:  # HLT
-                exit()
-
-            if ir == 0x82:  # LDI
-                self.reg[self.ram_read(self.pc + 1)
-                         ] = self.ram_read(self.pc + 2)
-                self.pc += 1 + 2
-
-            elif ir == 0x47:  # PRN
-                print(self.reg[self.ram_read(self.pc + 1)])
-                self.pc += 1 + 1
-
-            elif ir == 0xA0:
-                self.alu("ADD", self.ram_read(self.pc + 1),
-                         self.ram_read(self.pc+2))
-                self.pc += 1 + 2
-            elif ir == 0xA1:
-                self.alu("SUB", self.ram_read(self.pc + 1),
-                         self.ram_read(self.pc+2))
-                self.pc += 1 + 2
-            elif ir == 0xA2:
-                self.alu("MUL", self.ram_read(self.pc + 1),
-                         self.ram_read(self.pc+2))
-                self.pc += 1 + 2
-            elif ir == 0xA3:
-                self.alu("DIV", self.ram_read(self.pc + 1),
-                         self.ram_read(self.pc+2))
-                self.pc += 1 + 2
-            elif ir == 0xA4:
-                self.alu("MOD", self.ram_read(self.pc + 1),
-                         self.ram_read(self.pc+2))
-                self.pc += 1 + 2
-
+            if (ir & 0x20) >> 5:
+                # ALU
+                if ir >> 6 == 0x02:
+                    self.ALU(ir & 0x0F, self.ram_read(self.pc + 1),
+                             self.ram_read(self.pc+2))
+                else:
+                    self.ALU(ir & 0x0F, self.ram_read(self.pc + 1), None)
+            
             else:
-                print("Error: Unknown Instruction %02X" % ir)
-                self.trace()
-                exit()
+                action = self.dispatch_table.get(ir)
+                if action is None:
+                    print("Error: Unknown Instruction %02X" % ir)
+                    self.trace()
+                    exit()
+                action(ir)
+
+            if not (ir & 0x10) >> 4:
+                # If the program isn't setting the
+                # PC for us, we'll do it here
+                self.pc += 1 + (ir >> 6)
