@@ -14,6 +14,7 @@ class CPU:
         self.reg = [0] * 0x8
         self.reg[7] = 0xF4
         self.fl = 0
+        self.ie = 1
         self.dispatch_table = {
             # ALU
             0b10100000: self.ADD,
@@ -122,39 +123,47 @@ class CPU:
                                ] + 1) & 0b11111111
 
     def INT(self):
-        pass
+        nth_bit = self.reg[self.ram_read(self.pc + 1)]
+        self.reg[6] |= (1 << nth_bit)
 
     def IRET(self):
-        pass
+        for i in range(6, -1, -1):
+            self.reg[i] = self.ram_read(self.reg[7])
+            self.reg[7] += 1
+        self.fl = self.ram_read(self.reg[7])
+        self.reg[7] += 1
+        self.pc = self.ram_read(self.reg[7])
+        self.reg[7] += 1
+        self.ie = 1
 
     def JEQ(self):
         if self.fl & 0b001:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def JGE(self):
         if self.fl & 0b011:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def JGT(self):
         if self.fl & 0b010:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def JLE(self):
         if self.fl & 0b101:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def JLT(self):
         if self.fl & 0b100:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def JMP(self):
@@ -163,7 +172,7 @@ class CPU:
     def JNE(self):
         if not self.fl & 0b001:
             self.pc = self.reg[self.ram_read(self.pc + 1)]
-        else: 
+        else:
             self.pc += 2
 
     def LD(self):
@@ -234,26 +243,63 @@ class CPU:
     def XOR(self):
         pass
 
-
     def trace(self):
         """
         Handy function to print out the CPU state. You might want to call this
         from run() if you need help debugging.
         """
-
-        print(f"TRACE: %02X %02X | %02X %02X %02X |" % (
+        trace_string = ""
+        trace_values = (
             self.pc,
             self.fl,
-            # self.ie,
-            self.ram_read(self.pc),
-            self.ram_read(self.pc + 1),
-            self.ram_read(self.pc + 2)
-        ), end='')
+            self.ie,
+            self.ram_read(self.pc)
+        )
+
+        # If the pc is at the end of ram,
+        # we don't want self.trace() to throw an index error.
+        # These if checks make sure to only print the ram at
+        # self.pc + 1 and self.pc + 2 if teh values are valid.
+        if self.pc + 2 >= len(self.ram):
+            trace_string = "TRACE: %02X %02X %02X | %02X |"
+
+        elif self.pc + 1 >= len(self.ram):
+            trace_string = "TRACE: %02X %02X %02X | %02X %02X |"
+            trace_values = (*trace_values, self.ram_read(self.pc + 1))
+
+        else:
+            trace_string = "TRACE: %02X %02X %02X | %02X %02X %02X |"
+            trace_values = (
+                *trace_values, self.ram_read(self.pc + 1), self.ram_read(self.pc + 2))
+        
+        print(trace_string % trace_values, end='')
 
         for i in range(8):
             print(" %02X" % self.reg[i], end='')
 
         print()
+
+    def handle_interrupt(self):
+        for i in range(8):
+            if (self.reg[5] & self.reg[6] >> i) & 1 == 1:
+
+                # Turn off interrupts
+                self.ie = 0
+                # Un-set the interrupt bit
+                self.reg[6] &= ~(1 << i) & 0b11111111
+
+                # Push values to stack
+                self.reg[7] -= 1
+                self.ram_write(self.reg[7], self.pc)
+                self.reg[7] -= 1
+                self.ram_write(self.reg[7], self.fl)
+                for R in range(7):
+                    self.reg[7] -= 1
+                    self.ram_write(self.reg[7], self.reg[R])
+
+                # Set PC to interrupt vector
+                self.pc = self.ram_read(0xF8 + i)
+                return
 
     def run(self):
         """Run the CPU."""
@@ -265,17 +311,23 @@ class CPU:
                 sec_check = sec_check_2
                 self.reg[6] |= 0b00000001
 
-            # self.trace()
-            ir = self.ram_read(self.pc)
+            if self.ie and self.reg[5] > 0b0:
 
-            action = self.dispatch_table.get(ir)
-            if action is None:
-                print(f"Error: Unknown Instruction {bin(ir)}")
-                self.trace()
-                exit()
-            action()
+                self.handle_interrupt()
 
-            if not (ir & 0b00010000) >> 4:
-                # If the program isn't setting the
-                # PC for us, we'll do it here
-                self.pc += 1 + (ir >> 6)
+            else:
+
+                # self.trace()
+                ir = self.ram_read(self.pc)
+
+                action = self.dispatch_table.get(ir)
+                if action is None:
+                    print(f"Error: Unknown Instruction {bin(ir)}")
+                    self.trace()
+                    exit()
+                action()
+
+                if not (ir & 0b00010000) >> 4:
+                    # If the program isn't setting the
+                    # PC for us, we'll do it here
+                    self.pc += 1 + (ir >> 6)
