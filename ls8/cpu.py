@@ -2,6 +2,7 @@
 
 import sys
 import time
+import msvcrt
 
 
 class CPU:
@@ -271,7 +272,7 @@ class CPU:
             trace_string = "TRACE: %02X %02X %02X | %02X %02X %02X |"
             trace_values = (
                 *trace_values, self.ram_read(self.pc + 1), self.ram_read(self.pc + 2))
-        
+
         print(trace_string % trace_values, end='')
 
         for i in range(8):
@@ -280,9 +281,20 @@ class CPU:
         print()
 
     def handle_interrupt(self):
-        for i in range(8):
-            if (self.reg[5] & self.reg[6] >> i) & 1 == 1:
+        """
+        Checks and handles any interrupt codes.
 
+        If an interrupt is found, saves values to stack,
+        adjusts PC, and returns True.
+
+        If no interrupt is found, or interrupts are not enabled,
+        returns False.
+        """
+        if not self.ie or self.reg[5] == 0b0:
+            return False
+
+        for i in range(8):
+            if ((self.reg[5] & self.reg[6]) >> i) & 1 == 1:
                 # Turn off interrupts
                 self.ie = 0
                 # Un-set the interrupt bit
@@ -299,35 +311,40 @@ class CPU:
 
                 # Set PC to interrupt vector
                 self.pc = self.ram_read(0xF8 + i)
-                return
+                return True
+        return False
 
     def run(self):
         """Run the CPU."""
         sec_check = time.time()
         while True:
 
+            if msvcrt.kbhit():
+                k = msvcrt.getch()
+                ASCII_val = ord(k.decode("ASCII"))
+                self.ram_write(0b11110100, ASCII_val)
+                self.reg[6] |= 0b00000010
+
             sec_check_2 = time.time()
             if sec_check_2 - sec_check >= 1:
                 sec_check = sec_check_2
                 self.reg[6] |= 0b00000001
 
-            if self.ie and self.reg[5] > 0b0:
+            if self.handle_interrupt():
+                # If we've found and handled an error,
+                # restart the loop
+                continue
+            # self.trace()
+            ir = self.ram_read(self.pc)
 
-                self.handle_interrupt()
+            action = self.dispatch_table.get(ir)
+            if action is None:
+                print(f"Error: Unknown Instruction {bin(ir)}")
+                self.trace()
+                exit()
+            action()
 
-            else:
-
-                # self.trace()
-                ir = self.ram_read(self.pc)
-
-                action = self.dispatch_table.get(ir)
-                if action is None:
-                    print(f"Error: Unknown Instruction {bin(ir)}")
-                    self.trace()
-                    exit()
-                action()
-
-                if not (ir & 0b00010000) >> 4:
-                    # If the program isn't setting the
-                    # PC for us, we'll do it here
-                    self.pc += 1 + (ir >> 6)
+            if not (ir & 0b00010000) >> 4:
+                # If the program isn't setting the
+                # PC for us, we'll do it here
+                self.pc += 1 + (ir >> 6)
