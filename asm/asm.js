@@ -53,6 +53,7 @@ const sym = {};
 // Operands:
 const ops = {
   "ADD":  { type: 2, code: '10100000' },
+  "ADDI": { type: 2, code: '10101110' },
   "AND":  { type: 2, code: '10101000' },
   "CALL": { type: 1, code: '01010000' },
   "CMP":  { type: 2, code: '10100111' },
