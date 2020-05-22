@@ -32,6 +32,7 @@ class CPU:
             0b10101011: self.XOR,
             0b10101100: self.SHL,
             0b10101101: self.SHR,
+            0b10101110: self.ADDI,
             # PC Mutators
             0b01010000: self.CALL,
             0b00010001: self.RET,
@@ -82,6 +83,9 @@ class CPU:
     def ADD(self):
         self.reg[self.ram_read(self.pc+1)
                  ] += self.reg[self.ram_read(self.pc+2)]
+
+    def ADDI(self):
+        self.reg[self.ram_read(self.pc+1)] += self.ram_read(self.pc+2)
 
     def AND(self):
         self.reg[self.ram_read(self.pc+1)
