@@ -213,7 +213,7 @@ class CPU:
         self.reg[7] += 1
 
     def PRA(self):
-        print(chr(self.reg[self.ram_read(self.pc + 1)]))
+        print(chr(self.reg[self.ram_read(self.pc + 1)]), end="")
 
     def PRN(self):
         print(self.reg[self.ram_read(self.pc + 1)])
